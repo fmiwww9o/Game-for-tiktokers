@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Jogo da Live</title>
+<style>
+*{box-sizing:border-box;margin:0}
+html,body{height:100%;background:#12141c;color:#fff;font-family:system-ui,sans-serif;overflow:hidden}
+body{display:flex;flex-direction:column}
+#topo{padding:10px;background:#1d2030;border-bottom:2px solid #333a55}
+#topo h1{font-size:15px;text-align:center;margin-bottom:4px}
+.regra{font-size:17px;padding:6px 10px;background:#262a40;border-radius:8px;margin-top:4px}
+#jogo{position:relative;flex:1;overflow:hidden}
+#flash{position:absolute;inset:0;background:#ff5a1f;opacity:0;pointer-events:none}
+#flash.on{animation:fl .5s}
+@keyframes fl{0%{opacity:.7}100%{opacity:0}}
+.treme{animation:tremer .5s}
+@keyframes tremer{20%{transform:translate(-8px,6px)}40%{transform:translate(8px,-6px)}60%{transform:translate(-6px,-4px)}80%{transform:translate(6px,4px)}}
+.item{position:absolute;top:-70px;text-align:center;font-size:48px;line-height:1;animation:cair linear forwards}
+.item small{display:block;font-size:12px;max-width:90px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+@keyframes cair{from{top:-70px}to{top:calc(100% - 70px)}}
+.explode span{display:inline-block;animation:pop .5s forwards}
+@keyframes pop{to{transform:scale(3);opacity:0}}
+#base{display:flex;justify-content:space-around;padding:10px;background:#1d2030;font-size:24px;font-weight:700;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px))}
+#info{font-size:11px;color:#9aa3c7;text-align:center;padding:4px;background:#1d2030}
+#teste{display:none;gap:6px;padding:6px;background:#1d2030}
+#teste button{flex:1;padding:10px;font-size:14px}
+</style>
+</head>
+<body>
+<div id="topo">
+  <h1>🎁 Mande e veja acontecer!</h1>
+  <div id="lista"></div>
+</div>
+<div id="info"><span id="status">Conectando...</span> · <span id="ultimo"></span></div>
+<div id="jogo"><div id="flash"></div></div>
+<div id="teste">
+  <button onclick="tratar({tipo:'follow',usuario:'teste'})">Seguir</button>
+  <button onclick="tratar({tipo:'gift',usuario:'teste',presente:'Rose',quantidade:1})">Rosa</button>
+  <button onclick="tratar({tipo:'gift',usuario:'teste',presente:'Outro',quantidade:1})">Outro</button>
+</div>
+<div id="base"><div>🍎 <span id="pontos">0</span></div><div>💥 <span id="bombas">0</span></div></div>
+
+<script>
+// ===== CONFIGURAÇÃO: edite aqui o que cada coisa faz =====
+// quando: 'follow' | nome do presente em inglês (ex: 'Rose') | '*' = qualquer outro presente
+// acao: 'maca' (+1 ponto) ou 'bomba' (-5 pontos e explosão) | qtd: quantas caem
+const REGRAS = [
+  { quando: 'follow', lista: '➕ Seguir → 🍎 maçã',               acao: 'maca',  qtd: 1 },
+  { quando: 'Rose',   lista: '🌹 Rosa → 💣 bomba',                acao: 'bomba', qtd: 1 },
+  { quando: '*',      lista: '🎁 Outro presente → 🍎🍎🍎 3 maçãs', acao: 'maca',  qtd: 3 }
+];
+// =========================================================
+
+const $ = id => document.getElementById(id);
+let pontos = 0, bombas = 0;
+$('lista').innerHTML = REGRAS.map(r => '<div class="regra">' + r.lista + '</div>').join('');
+if (new URLSearchParams(location.search).has('teste')) $('teste').style.display = 'flex';
+
+function placar() { $('pontos').textContent = pontos; $('bombas').textContent = bombas; }
+
+function boom() {
+  const j = $('jogo'), f = $('flash');
+  j.classList.remove('treme'); f.classList.remove('on'); void j.offsetWidth;
+  j.classList.add('treme'); f.classList.add('on');
+}
+
+function soltar(acao, quem) {
+  const el = document.createElement('div');
+  el.className = 'item';
+  el.style.left = (4 + Math.random() * 78) + '%';
+  el.style.animationDuration = (2 + Math.random() * 1.5) + 's';
+  el.innerHTML = '<span>' + (acao === 'maca' ? '🍎' : '💣') + '</span><small></small>';
+  el.querySelector('small').textContent = quem || '';
+  el.onanimationend = () => {
+    if (acao === 'maca') { pontos++; el.remove(); }
+    else {
+      bombas++; pontos = Math.max(0, pontos - 5); boom();
+      el.style.animation = 'none'; el.style.top = 'calc(100% - 70px)';
+      el.firstChild.textContent = '💥'; el.classList.add('explode');
+      setTimeout(() => el.remove(), 500);
+    }
+    placar();
+  };
+  $('jogo').appendChild(el);
+}
+
+function tratar(ev) {
+  let regra;
+  if (ev.tipo === 'follow') regra = REGRAS.find(r => r.quando === 'follow');
+  else if (ev.tipo === 'gift') {
+    const nome = String(ev.presente).toLowerCase();
+    regra = REGRAS.find(r => r.quando.toLowerCase() === nome) || REGRAS.find(r => r.quando === '*');
+  }
+  $('ultimo').textContent = 'último: ' + (ev.tipo === 'gift' ? ev.presente : ev.tipo) + ' de ' + ev.usuario;
+  if (!regra) return;
+  const n = Math.min(10, regra.qtd * (ev.quantidade || 1));
+  for (let i = 0; i < n; i++) setTimeout(() => soltar(regra.acao, ev.usuario), i * 250);
+}
+
+// ===== conexão com o servidor =====
+let usuario = new URLSearchParams(location.search).get('user');
+try { usuario = usuario || localStorage.getItem('tt_user'); } catch (e) {}
+if (!usuario) usuario = prompt('Seu @ do TikTok (sem o @):') || '';
+usuario = usuario.replace('@', '').trim();
+try { localStorage.setItem('tt_user', usuario); } catch (e) {}
+
+function ligar() {
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+  ws.onopen = () => ws.send(JSON.stringify({ user: usuario }));
+  ws.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.tipo === 'status') $('status').textContent = d.texto; else tratar(d);
+  };
+  ws.onclose = () => { $('status').textContent = 'Reconectando...'; setTimeout(ligar, 3000); };
+}
+ligar();
+</script>
+</body>
+</html>
